@@ -1,0 +1,119 @@
+{% comment %}
+  Hide Price App Embed Block
+  
+  This block injects the hide-price.js script into the storefront
+  and passes the necessary configuration data from Liquid.
+  
+  The script will:
+  - Detect out-of-stock products
+  - Hide prices dynamically
+  - Show custom replacement messages
+  - Work across product pages, collections, and featured sections
+{% endcomment %}
+
+{% if shop %}
+<script id="hide-price-app-config" type="application/json">
+{
+  "shopDomain": "{{ shop.permanent_domain }}",
+  "enabled": {{ block.settings.enabled | default: true }},
+  "hideAddToCart": {{ block.settings.hide_add_to_cart | default: true }},
+  "hideOnlyOutOfStock": {{ block.settings.hide_only_out_of_stock | default: true }},
+  "customMessage": {{ block.settings.custom_message | default: "Price on Request" | json }},
+  "hideOnProductPage": {{ block.settings.hide_on_product_page | default: true }},
+  "hideOnCollection": {{ block.settings.hide_on_collection | default: true }},
+  "hideOnFeatured": {{ block.settings.hide_on_featured | default: true }},
+  "hideOnQuickView": {{ block.settings.hide_on_quick_view | default: true }},
+  "currentProduct": {% if product %}
+    {
+      "id": {{ product.id }},
+      "available": {{ product.available | default: false }},
+      "variants": [
+        {% for variant in product.variants %}
+          {
+            "id": {{ variant.id }},
+            "available": {{ variant.available | default: false }},
+            "inventory_quantity": {{ variant.inventory_quantity | default: 0 }}
+          }{% unless forloop.last %},{% endunless %}
+        {% endfor %}
+      ]
+    }
+  {% else %}
+    null
+  {% endif %}
+}
+</script>
+
+{{ 'hide-price.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'hide-price.js' | asset_url }}" defer="defer"></script>
+{% endif %}
+
+{% schema %}
+{
+  "name": "Hide Price App",
+  "target": "head",
+  "stylesheet": "hide-price.css",
+  "javascript": "hide-price.js",
+  "settings": [
+    {
+      "type": "header",
+      "content": "General Settings"
+    },
+    {
+      "type": "checkbox",
+      "id": "enabled",
+      "label": "Enable price hiding",
+      "default": true,
+      "info": "Turn the app functionality on or off"
+    },
+    {
+      "type": "checkbox",
+      "id": "hide_only_out_of_stock",
+      "label": "Hide only when out of stock",
+      "default": true,
+      "info": "When unchecked, hides prices for all products"
+    },
+    {
+      "type": "checkbox",
+      "id": "hide_add_to_cart",
+      "label": "Hide Add to Cart button",
+      "default": true,
+      "info": "Also hide the Add to Cart button for affected products"
+    },
+    {
+      "type": "text",
+      "id": "custom_message",
+      "label": "Custom message",
+      "default": "Price on Request",
+      "info": "Message to display instead of the price"
+    },
+    {
+      "type": "header",
+      "content": "Location Settings"
+    },
+    {
+      "type": "checkbox",
+      "id": "hide_on_product_page",
+      "label": "Product pages",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "hide_on_collection",
+      "label": "Collection pages",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "hide_on_featured",
+      "label": "Featured product sections",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "hide_on_quick_view",
+      "label": "Quick view modals",
+      "default": true
+    }
+  ]
+}
+{% endschema %}
