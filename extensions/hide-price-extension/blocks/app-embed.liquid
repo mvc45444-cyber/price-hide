@@ -15,41 +15,26 @@
 <script id="hide-price-app-config" type="application/json">
 {
   "shopDomain": "{{ shop.permanent_domain }}",
-  "enabled": {{ block.settings.enabled | default: true }},
-  "hideAddToCart": {{ block.settings.hide_add_to_cart | default: true }},
-  "hideOnlyOutOfStock": {{ block.settings.hide_only_out_of_stock | default: true }},
+  "enabled": {% if block.settings.enabled == nil %}true{% else %}{{ block.settings.enabled }}{% endif %},
+  "hideAddToCart": {% if block.settings.hide_add_to_cart == nil %}true{% else %}{{ block.settings.hide_add_to_cart }}{% endif %},
+  "hideOnlyOutOfStock": {% if block.settings.hide_only_out_of_stock == nil %}true{% else %}{{ block.settings.hide_only_out_of_stock }}{% endif %},
   "customMessage": {{ block.settings.custom_message | default: "Price on Request" | json }},
-  "hideOnProductPage": {{ block.settings.hide_on_product_page | default: true }},
-  "hideOnCollection": {{ block.settings.hide_on_collection | default: true }},
-  "hideOnFeatured": {{ block.settings.hide_on_featured | default: true }},
-  "hideOnQuickView": {{ block.settings.hide_on_quick_view | default: true }},
-  "currentProduct": {% if product %}
-    {
-      "id": {{ product.id }},
-      "available": {{ product.available | default: false }},
-      "variants": [
-        {% for variant in product.variants %}
-          {
-            "id": {{ variant.id }},
-            "available": {{ variant.available | default: false }},
-            "inventory_quantity": {{ variant.inventory_quantity | default: 0 }}
-          }{% unless forloop.last %},{% endunless %}
-        {% endfor %}
-      ]
-    }
-  {% else %}
-    null
-  {% endif %}
+  "hideOnProductPage": {% if block.settings.hide_on_product_page == nil %}true{% else %}{{ block.settings.hide_on_product_page }}{% endif %},
+  "hideOnCollection": {% if block.settings.hide_on_collection == nil %}true{% else %}{{ block.settings.hide_on_collection }}{% endif %},
+  "hideOnFeatured": {% if block.settings.hide_on_featured == nil %}true{% else %}{{ block.settings.hide_on_featured }}{% endif %},
+  "hideOnQuickView": {% if block.settings.hide_on_quick_view == nil %}true{% else %}{{ block.settings.hide_on_quick_view }}{% endif %},
+  "_pageType": "{{ request.page_type }}",
+  "productAvailability": {
+    {% assign avail_first = true %}{% if product %}{% unless avail_first %},{% endunless %}"{{ product.handle }}": {{ product.available }}{% assign avail_first = false %}{% endif %}{% if collection %}{% for p in collection.products %}{% unless avail_first %},{% endunless %}"{{ p.handle }}": {{ p.available }}{% assign avail_first = false %}{% endfor %}{% endif %}{% if search and search.performed %}{% for item in search.results %}{% if item.object_type == 'product' %}{% unless avail_first %},{% endunless %}"{{ item.handle }}": {{ item.available }}{% assign avail_first = false %}{% endif %}{% endfor %}{% endif %}
+  }
 }
 </script>
 
-{{ 'hide-price.css' | asset_url | stylesheet_tag }}
-<script src="{{ 'hide-price.js' | asset_url }}" defer="defer"></script>
 {% endif %}
 
 {% schema %}
 {
-  "name": "Hide Price App",
+  "name": "Stockify",
   "target": "head",
   "stylesheet": "hide-price.css",
   "javascript": "hide-price.js",

@@ -15,32 +15,135 @@
   const SELECTORS = {
     price: '.price, .product-price, .product__price, .money, .price-item, [data-price]',
     addToCart: '[name="add"], button[type="submit"], [data-add-to-cart]',
-    productCard: '.product-card, .product-item, .grid__item, [data-product-card]',
-    productPage: '.product, .product-single, [data-product], .product__info-wrapper, .product-form',
+    productPage: '.product, .product-single, .product__info-wrapper, .product-form',
     productPagePrice: '.product__price, .price--large, .product-single__price, .product-form__price',
   };
 
   function loadConfig() {
     try {
       const el = document.getElementById(CONFIG_ID);
-      config = el ? { ...DEFAULTS, ...JSON.parse(el.textContent) } : DEFAULTS;
+      const parsed = el ? JSON.parse(el.textContent) : {};
+      config = { ...DEFAULTS, ...parsed };
+      if (config.hideOnlyOutOfStock !== false) {
+        config.hideOnlyOutOfStock = true;
+      }
+      console.log('[HidePriceApp] Config loaded:', JSON.stringify(config));
+      if (config.productAvailability) {
+        var handles = Object.keys(config.productAvailability);
+        console.log('[HidePriceApp] Liquid availability for ' + handles.length + ' products:', JSON.stringify(config.productAvailability));
+      } else {
+        console.warn('[HidePriceApp] No productAvailability map found in config');
+      }
     } catch (e) {
-      config = DEFAULTS;
+      config = { ...DEFAULTS };
+      console.warn('[HidePriceApp] Config parse error, using defaults:', e.message);
     }
   }
 
-  function shouldHide(data) {
-    if (!config.enabled || !config.hideOnlyOutOfStock) return config.enabled;
-    if (!data) return false;
-    if (data.available === false) return true;
-    return data.variants?.every(v => !v.available || v.inventory_quantity <= 0);
+  // Theme-agnostic card discovery: find cards by product links
+  function discoverProductCards() {
+    const links = document.querySelectorAll('a[href*="/products/"]');
+    const seen = new Set();
+    const cards = [];
+
+    for (const link of links) {
+      let card = link.closest(
+        '.product-card, .product-item, [data-product-card], .product-card-wrapper, ' +
+        '.card, .card-wrapper, .grid__item, .collection-product-card, ' +
+        'li, article'
+      );
+      if (!card) card = link.parentElement;
+      if (!card || seen.has(card)) continue;
+
+      // Skip containers holding multiple different products
+      const productLinks = card.querySelectorAll('a[href*="/products/"]');
+      const uniqueHandles = new Set();
+      for (const pl of productLinks) {
+        const m = pl.href.match(/\/products\/([^/?#]+)/);
+        if (m) uniqueHandles.add(m[1]);
+      }
+      if (uniqueHandles.size > 1) continue;
+
+      seen.add(card);
+      cards.push(card);
+    }
+    return cards;
+  }
+
+  // Check Liquid-embedded availability data for a handle.
+  // Returns: true (out of stock), false (in stock), or null (not in map).
+  function checkLiquidAvailability(handle) {
+    if (!handle) return null;
+    if (!config.productAvailability) return null;
+    if (!(handle in config.productAvailability)) return null;
+    // Liquid's product.available is true if ANY variant can be purchased
+    // So available === false means ALL variants are out of stock
+    return config.productAvailability[handle] === false;
+  }
+
+  // DOM-based sold-out detection: scan a container element for sold-out indicators
+  function isCardSoldOut(card) {
+    // 1. Check for sold-out text in badges/labels
+    var badges = card.querySelectorAll('.badge, .card__badge, .product-tag, span, div');
+    for (var i = 0; i < badges.length; i++) {
+      var text = (badges[i].textContent || '').trim().toLowerCase();
+      if (text === 'sold out' || text === 'out of stock' || text === 'unavailable') {
+        return true;
+      }
+    }
+
+    // 2. Check add-to-cart button state and text
+    var btns = card.querySelectorAll('button, [role="button"], .btn, a.button');
+    for (var j = 0; j < btns.length; j++) {
+      var btn = btns[j];
+      if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') {
+        var btnText = (btn.textContent || '').trim().toLowerCase();
+        if (btnText.includes('sold out') || btnText.includes('unavailable') || btnText.includes('out of stock')) {
+          return true;
+        }
+      }
+    }
+
+    // 3. Check data attributes
+    if (card.querySelector('[data-available="false"], [data-sold-out], [data-unavailable="true"]')) {
+      return true;
+    }
+
+    return false;
+  }
+
+  // Three-tier detection: Liquid map → DOM detection → safe default (don't hide)
+  function shouldHideForCard(handle, card) {
+    if (!config.enabled) return false;
+    // When hideOnlyOutOfStock is off, hide ALL prices unconditionally
+    if (config.hideOnlyOutOfStock === false) return true;
+
+    // Tier 1: Liquid map
+    var liquidResult = checkLiquidAvailability(handle);
+    if (liquidResult !== null) {
+      console.log('[HidePriceApp] "' + handle + '" Liquid map says out-of-stock=' + liquidResult);
+      return liquidResult;
+    }
+
+    // Tier 2: DOM-based detection
+    if (card) {
+      var domResult = isCardSoldOut(card);
+      if (domResult) {
+        console.log('[HidePriceApp] "' + handle + '" DOM detection says sold out');
+        return true;
+      }
+    }
+
+    // Tier 3: Safe default — don't hide
+    console.log('[HidePriceApp] "' + handle + '" no sold-out signal found, not hiding');
+    return false;
   }
 
   function hidePrice(el) {
     if (el.dataset.priceHidden) return;
     el.dataset.priceHidden = '1';
     const msg = document.createElement('span');
-    msg.className = `${APP_PREFIX}-message`;
+    msg.className = APP_PREFIX + '-message';
     msg.textContent = config.customMessage;
     el.innerHTML = '';
     el.appendChild(msg);
@@ -52,68 +155,70 @@
     el.dataset.hidden = '1';
   }
 
-  function getProductData(el) {
-    // First check if we have currentProduct data from Liquid (most reliable)
-    if (config.currentProduct) {
-      return config.currentProduct;
+  function getProductHandle(card) {
+    var link = card.querySelector('a[href*="/products/"]');
+    if (link) {
+      var match = link.href.match(/\/products\/([^/?#]+)/);
+      if (match) return match[1];
     }
-
-    // For collection pages, check DOM heuristics
-    const badge = el.querySelector('.sold-out, .badge--sold-out, [class*="sold-out"]');
-    if (badge || el.textContent.toLowerCase().includes('sold out')) {
-      return { available: false };
-    }
-
-    const btn = el.querySelector(SELECTORS.addToCart);
-    if (btn?.disabled || btn?.classList.contains('disabled')) {
-      return { available: false };
-    }
-
-    // Check data attributes for product availability
-    if (el.dataset.available === 'false') {
-      return { available: false };
-    }
-
     return null;
+  }
+
+  function getHandleFromURL() {
+    var match = window.location.pathname.match(/\/products\/([^/?#]+)/);
+    return match ? match[1] : null;
   }
 
   function processProductPage() {
     if (!config.hideOnProductPage) return;
-    if (!config.currentProduct) return;
 
-    if (shouldHide(config.currentProduct)) {
-      // Hide all price elements on product page
+    var handle = getHandleFromURL();
+    if (!handle) return;
+
+    // Use the product info area as the DOM context for sold-out detection
+    var productArea = document.querySelector(SELECTORS.productPage) || document.body;
+    var hide = shouldHideForCard(handle, productArea);
+    console.log('[HidePriceApp] Product page "' + handle + '": hide=' + hide);
+
+    if (hide) {
       document.querySelectorAll(SELECTORS.productPagePrice).forEach(hidePrice);
-      document.querySelectorAll(SELECTORS.price).forEach(el => {
-        // Only hide if within product form/info area
-        if (el.closest(SELECTORS.productPage)) {
-          hidePrice(el);
-        }
+      document.querySelectorAll(SELECTORS.price).forEach(function(el) {
+        if (el.closest(SELECTORS.productPage)) hidePrice(el);
       });
-      // Hide add to cart buttons
-      document.querySelectorAll(SELECTORS.addToCart).forEach(el => {
-        if (el.closest(SELECTORS.productPage)) {
-          hideBtn(el);
-        }
+      document.querySelectorAll(SELECTORS.addToCart).forEach(function(el) {
+        if (el.closest(SELECTORS.productPage)) hideBtn(el);
       });
     }
   }
 
   function processCards() {
-    // Check if we should process collection/featured sections
-    const isCollection = window.location.pathname.includes('/collections/');
-    const isFeatured = !isCollection && document.querySelector(SELECTORS.productCard);
+    var isCollection = window.location.pathname.includes('/collections/');
+    var isSearch = window.location.pathname.includes('/search');
+    var cards = discoverProductCards();
+    var isFeatured = !isCollection && !isSearch && cards.length > 0;
 
     if (isCollection && !config.hideOnCollection) return;
     if (isFeatured && !config.hideOnFeatured) return;
+    if (cards.length === 0) return;
 
-    document.querySelectorAll(SELECTORS.productCard).forEach(card => {
-      const data = getProductData(card);
-      if (shouldHide(data)) {
+    console.log('[HidePriceApp] Found ' + cards.length + ' product cards');
+
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+      if (card.dataset.hidePriceProcessed) continue;
+      card.dataset.hidePriceProcessed = '1';
+
+      var handle = getProductHandle(card);
+      if (!handle) continue;
+
+      var hide = shouldHideForCard(handle, card);
+      console.log('[HidePriceApp] Card "' + handle + '": hide=' + hide);
+
+      if (hide) {
         card.querySelectorAll(SELECTORS.price).forEach(hidePrice);
         card.querySelectorAll(SELECTORS.addToCart).forEach(hideBtn);
       }
-    });
+    }
   }
 
   function init() {
@@ -121,15 +226,27 @@
     loadConfig();
     if (!config.enabled) return;
 
-    processProductPage();  // Handle main product page
-    processCards();        // Handle collection/featured cards
-    
-    new MutationObserver(() => {
+    var isProductPage = /\/products\/[^/?#]+/.test(window.location.pathname);
+
+    if (isProductPage) {
+      processProductPage();
+    }
+    processCards();
+
+    new MutationObserver(function() {
       clearTimeout(init.timer);
-      init.timer = setTimeout(processCards, 100);
+      init.timer = setTimeout(function() {
+        processCards();
+        if (isProductPage) processProductPage();
+      }, 100);
     }).observe(document.body, { childList: true, subtree: true });
-    
-    document.addEventListener('shopify:section:load', () => setTimeout(processCards, 100));
+
+    document.addEventListener('shopify:section:load', function() {
+      setTimeout(function() {
+        processCards();
+        if (isProductPage) processProductPage();
+      }, 100);
+    });
     initialized = true;
   }
 

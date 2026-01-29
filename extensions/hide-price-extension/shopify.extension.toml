@@ -3,7 +3,7 @@ api_version = "2024-01"
 [[extensions]]
 uid = "e2e37564-4614-0154-4701-bb40b1e15e8e4e9258cd"
 type = "theme"
-name = "Hide Price Extension"
+name = "Stockify"
 handle = "hide-price-extension"
 
 [[extensions.assets]]
@@ -16,5 +16,5 @@ file = "assets/hide-price.css"
 
 [[extensions.blocks]]
 type = "app_embed"
-name = "Hide Price App"
+name = "Stockify"
 file = "blocks/app-embed.liquid"

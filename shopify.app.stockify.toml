@@ -1,10 +1,13 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "93dd6bd83d8241db95bf980d446f38b5"
-name = "stockify"
+client_id = "d3caba51b5d46c0dddf6279709ff84f4"
+name = "Stockify"
 application_url = "https://shopify.dev/apps/default-app-home"
 embedded = true
-handle = "hide-price-sabai-2024"
+
+[build]
+automatically_update_urls_on_dev = true
+include_config_on_deploy = true
 
 [webhooks]
 api_version = "2026-04"
