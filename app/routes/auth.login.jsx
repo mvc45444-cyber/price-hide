@@ -10,7 +10,7 @@ import {
   BlockStack,
 } from "@shopify/polaris";
 import { useState } from "react";
-import { login } from "../../shopify.server";
+import { login } from "../shopify.server";
 
 export const loader = async ({ request }) => {
   const url = new URL(request.url);
